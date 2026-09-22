@@ -1,0 +1,73 @@
+name: Build Groq Primary Voice2text Notes APK
+
+on:
+  push:
+    branches:
+      - fix/groq-primary-verbatim
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-debug-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Accept Android SDK licenses
+        shell: bash
+        run: |
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+
+      - name: Install Android SDK components
+        shell: bash
+        run: |
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          "$SDKMANAGER" "platform-tools" "build-tools;36.0.0"
+          "$SDKMANAGER" "platforms;android-36.1" || "$SDKMANAGER" "platforms;android-36"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.3.1"
+
+      - name: Create CI debug keystore
+        shell: bash
+        run: |
+          keytool -genkeypair -v             -keystore "$GITHUB_WORKSPACE/debug.keystore"             -storepass android             -alias androiddebugkey             -keypass android             -keyalg RSA             -keysize 2048             -validity 10000             -dname "CN=Android Debug,O=Android,C=US"
+
+      - name: Run unit tests
+        shell: bash
+        run: gradle --no-daemon --stacktrace :app:testDebugUnitTest
+
+      - name: Assemble debug APK
+        shell: bash
+        run: gradle --no-daemon --stacktrace :app:assembleDebug
+
+      - name: Prepare APK
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/app-debug.apk dist/Voice2text-Notes-Groq-Primary.apk
+          sha256sum dist/Voice2text-Notes-Groq-Primary.apk > dist/Voice2text-Notes-Groq-Primary.apk.sha256
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Voice2text-Notes-Groq-Primary-apk
+          path: |
+            dist/Voice2text-Notes-Groq-Primary.apk
+            dist/Voice2text-Notes-Groq-Primary.apk.sha256
+          if-no-files-found: error
+          retention-days: 14
