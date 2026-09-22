@@ -1,7 +1,7 @@
 package com.example.domain.model
 
 enum class AccuracyMode(val displayName: String, val description: String) {
-    MAXIMUM_ACCURACY("Maximum Accuracy", "Gemini dedicated transcription, fallback to Groq Whisper Large V3"),
+    MAXIMUM_ACCURACY("Maximum Accuracy", "Groq Whisper Large V3 verbatim transcription, Gemini fallback"),
     BALANCED("Balanced", "Fast and accurate code-switching transcription"),
     FAST("Fast", "Optimized for quick turnaround using Whisper Turbo")
 }
