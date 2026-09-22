@@ -398,7 +398,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     ) {
         viewModelScope.launch {
             _transcriptionState.value = TranscriptionUiState.Processing(
-                providerName = "Gemini",
+                providerName = "Groq Whisper",
                 statusMessage = "Starting transcription...",
                 fileName = fileName,
                 durationMs = durationMs
@@ -411,7 +411,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
 
             try {
-                // RUN FROZEN TRANSCRIPTION ROUTER
+                // RUN TRANSCRIPTION ROUTER (Groq Whisper primary, Gemini fallback)
                 val result = transcriptionRouter.transcribeAudio(
                     audioFile = audioFile,
                     mimeType = mimeType,
