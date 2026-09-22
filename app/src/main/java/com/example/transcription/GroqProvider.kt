@@ -67,10 +67,22 @@ class GroqProvider(
 
         val fileRequestBody = audioFile.asRequestBody(cleanMimeType.toMediaType())
 
-        val promptHint = StringBuilder("Egyptian Arabic and English code-switching conversation. Terms: quotation, contractor, meeting, project, invoice, shop drawing, approval. ")
+        // Whisper prompting works best as transcript-style priming rather than LLM instructions.
+        // Keep user vocabulary first and the Egyptian-dialect anchor last so the dialect/style
+        // context survives if Whisper truncates an overlong prompt from the beginning.
+        val promptHint = StringBuilder()
         if (options.customVocabulary.isNotEmpty()) {
-            promptHint.append("Keywords: ").append(options.customVocabulary.joinToString(", "))
+            promptHint.append("Keywords: ")
+                .append(options.customVocabulary.joinToString(", "))
+                .append(". ")
         }
+        promptHint.append(
+            "طيب، إحنا بنتكلم مصري عادي زي ما بنقول الكلام في الحقيقة. " +
+                "أنا عايز أشوف النتيجة زي ما اتقالت: أنا عاوزه، إحنا هنجرب، هنعمل، هسجل، " +
+                "مش عارف، ليه، كده، دلوقتي، عشان، بتاع، برضه، ماشي، خلاص. " +
+                "ساعات بنقول English words وسط العربي: and we will add some English words to test. " +
+                "وممكن نقول ChatGPT, Balanced Mode, Meeting, Shop Drawing, BOQ, PR, Quotation, Contractor, Approval."
+        )
 
         val multipartBodyBuilder = MultipartBody.Builder()
             .setType(MultipartBody.FORM)
