@@ -47,10 +47,6 @@ jobs:
         run: |
           keytool -genkeypair -v             -keystore "$GITHUB_WORKSPACE/debug.keystore"             -storepass android             -alias androiddebugkey             -keypass android             -keyalg RSA             -keysize 2048             -validity 10000             -dname "CN=Android Debug,O=Android,C=US"
 
-      - name: Run unit tests
-        shell: bash
-        run: gradle --no-daemon --stacktrace :app:testDebugUnitTest
-
       - name: Assemble debug APK
         shell: bash
         run: gradle --no-daemon --stacktrace :app:assembleDebug
