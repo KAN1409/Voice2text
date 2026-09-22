@@ -169,18 +169,22 @@ class TranscriptionRouter(
         val geminiRateLimited = isRateLimited(geminiProvider.name)
         val groqRateLimited = isRateLimited(groqProvider.name)
 
-        if (geminiConfigured && !geminiRateLimited) {
-            configured.add(geminiProvider)
-        }
-
+        // Groq Whisper is the preferred verbatim transcription engine.
+        // Gemini remains a fallback only when Groq is unavailable, rate-limited,
+        // missing a key, or otherwise fails in the normal provider loop.
         if (groqConfigured && !groqRateLimited) {
             configured.add(groqProvider)
         }
 
-        // If all configured are currently rate-limited, still add them as last resort
+        if (geminiConfigured && !geminiRateLimited) {
+            configured.add(geminiProvider)
+        }
+
+        // If all configured providers are currently rate-limited, keep the same
+        // priority order and try Groq first as a last resort, then Gemini.
         if (configured.isEmpty()) {
-            if (geminiConfigured) configured.add(geminiProvider)
             if (groqConfigured) configured.add(groqProvider)
+            if (geminiConfigured) configured.add(geminiProvider)
         }
 
         return configured
