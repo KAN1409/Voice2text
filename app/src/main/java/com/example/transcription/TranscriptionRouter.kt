@@ -163,24 +163,28 @@ class TranscriptionRouter(
     private fun determineProviderOrder(): List<TranscriptionProvider> {
         val configured = mutableListOf<TranscriptionProvider>()
 
-        val geminiConfigured = geminiProvider.isConfigured
         val groqConfigured = groqProvider.isConfigured
+        val geminiConfigured = geminiProvider.isConfigured
 
-        val geminiRateLimited = isRateLimited(geminiProvider.name)
         val groqRateLimited = isRateLimited(groqProvider.name)
+        val geminiRateLimited = isRateLimited(geminiProvider.name)
+
+        // IMPORTANT: Groq Whisper is the verified verbatim transcription path.
+        // Keep it primary whenever it is configured and not temporarily rate-limited.
+        // Gemini is fallback only. Do not change provider prompts/models here.
+        if (groqConfigured && !groqRateLimited) {
+            configured.add(groqProvider)
+        }
 
         if (geminiConfigured && !geminiRateLimited) {
             configured.add(geminiProvider)
         }
 
-        if (groqConfigured && !groqRateLimited) {
-            configured.add(groqProvider)
-        }
-
-        // If all configured are currently rate-limited, still add them as last resort
+        // If every configured provider is temporarily rate-limited, preserve the same
+        // preference order as a last resort: Groq first, then Gemini.
         if (configured.isEmpty()) {
-            if (geminiConfigured) configured.add(geminiProvider)
             if (groqConfigured) configured.add(groqProvider)
+            if (geminiConfigured) configured.add(geminiProvider)
         }
 
         return configured
