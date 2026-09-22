@@ -1,0 +1,6 @@
+{
+  "name": "VoiceTranscriber",
+  "description": "Accurate voice transcription for Egyptian Arabic and English code-switching with Gemini and Groq Whisper.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
