@@ -1,6 +1,6 @@
 {
-  "name": "VoiceTranscriber",
-  "description": "Accurate voice transcription for Egyptian Arabic and English code-switching with Gemini and Groq Whisper.",
+  "name": "Voice2text Notes",
+  "description": "Personal note-taking and capture application with Egyptian Arabic and English voice transcription.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -412,14 +412,14 @@ fun SettingsScreen(
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(
-                            text = "VoiceTranscriber v1.0",
+                            text = "Voice2text Notes v2.0",
                             color = TextPrimary,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Specialized AI engine for Egyptian Arabic & English code-switching speech transcription with intelligent multi-provider failover.",
+                            text = "Personal note-taking and voice capture application with specialized Egyptian Arabic & English speech transcription and smart title suggestions.",
                             color = TextMuted,
                             fontSize = 13.sp,
                             lineHeight = 18.sp

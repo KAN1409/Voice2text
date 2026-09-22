@@ -2,15 +2,9 @@ package com.example.ui.screens
 
 import android.Manifest
 import android.content.pm.PackageManager
-import android.net.Uri
-import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -27,29 +21,37 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.FileOpen
-import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.TextFields
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material.icons.filled.Spellcheck
+import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -60,8 +62,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -71,19 +71,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
-import com.example.audio.RecordingState
-import com.example.data.local.entity.TranscriptionEntity
-import com.example.domain.model.ProviderStatus
+import com.example.data.local.entity.NoteEntity
+import com.example.domain.model.NoteSourceType
 import com.example.ui.MainViewModel
-import com.example.ui.components.LiveWaveformVisualizer
+import com.example.ui.components.CaptureOptionSheet
 import com.example.ui.components.RecordingModalDialog
-import com.example.ui.theme.AccentAmber
-import com.example.ui.theme.AccentGreen
+import com.example.ui.components.TextNoteEditorDialog
 import com.example.ui.theme.BackgroundDark
-import com.example.ui.theme.ErrorRed
 import com.example.ui.theme.PrimaryScarlet
-import com.example.ui.theme.PrimaryScarletDark
-import com.example.ui.theme.PrimaryScarletGlow
 import com.example.ui.theme.SurfaceBorder
 import com.example.ui.theme.SurfaceDark
 import com.example.ui.theme.SurfaceElevated
@@ -98,91 +93,95 @@ import java.util.Locale
 @Composable
 fun HomeScreen(
     viewModel: MainViewModel,
-    onNavigateToResult: (Long) -> Unit,
-    onNavigateToHistory: () -> Unit,
+    onNavigateToNoteDetail: (Long) -> Unit,
+    onNavigateToArchived: () -> Unit,
     onNavigateToVocabulary: () -> Unit,
     onNavigateToSettings: () -> Unit
 ) {
     val context = LocalContext.current
-    val recentItems by viewModel.recentTranscriptions.collectAsState()
-    val providerHealthMap by viewModel.providerHealthMap.collectAsState()
-    val todayGeminiMins by viewModel.todayGeminiMinutes.collectAsState()
-    val todayGroqMins by viewModel.todayGroqMinutes.collectAsState()
+    val allNotes by viewModel.allActiveNotes.collectAsState()
+    val pinnedNotes by viewModel.pinnedNotes.collectAsState()
+    val searchQuery by viewModel.searchQuery.collectAsState()
+    val searchResults by viewModel.searchResults.collectAsState()
 
-    val recordingState by viewModel.audioRecorder.recordingState.collectAsState()
-    val elapsedTimeMs by viewModel.audioRecorder.elapsedTimeMs.collectAsState()
-    val amplitudes by viewModel.audioRecorder.amplitudesHistory.collectAsState()
+    var showRecordingDialog by remember { mutableStateOf(false) }
+    var showCaptureOptions by remember { mutableStateOf(false) }
+    var showTextNoteEditor by remember { mutableStateOf(false) }
+    var selectedFilter by remember { mutableStateOf("All") } // All, Voice, Text, Pinned
 
-    var showPermissionRationale by remember { mutableStateOf(false) }
+    // Audio importer SAF launcher
+    val audioPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri?.let { viewModel.importAudio(it) }
+    }
 
+    // Permission launcher for recording
     val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
+        contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         if (isGranted) {
             val started = viewModel.startRecording()
-            if (!started) {
-                Toast.makeText(context, "Could not start audio recorder", Toast.LENGTH_SHORT).show()
+            if (started) {
+                showRecordingDialog = true
             }
-        } else {
-            Toast.makeText(context, "Microphone permission is required to record voice notes", Toast.LENGTH_LONG).show()
         }
-    }
-
-    val audioPickerLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        if (uri != null) {
-            viewModel.importAudio(uri)
-        }
-    }
-
-    // Modal when active recording is running
-    if (recordingState == RecordingState.RECORDING || recordingState == RecordingState.PAUSED) {
-        RecordingModalDialog(
-            elapsedTimeMs = elapsedTimeMs,
-            recordingState = recordingState,
-            amplitudes = amplitudes,
-            onPause = { viewModel.pauseRecording() },
-            onResume = { viewModel.resumeRecording() },
-            onStopAndTranscribe = { viewModel.stopAndTranscribe() },
-            onCancel = { viewModel.cancelRecording() }
-        )
     }
 
     Scaffold(
         topBar = {
-            CenterAlignedTopAppBar(
+            TopAppBar(
                 title = {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = "VOICE TRANSCRIBER",
+                            text = "Voice2text",
                             color = TextPrimary,
-                            fontSize = 16.sp,
+                            fontSize = 20.sp,
                             fontWeight = FontWeight.Bold,
-                            letterSpacing = 1.2.sp
+                            letterSpacing = (-0.5).sp
                         )
-                        Text(
-                            text = "Egyptian Arabic + English",
-                            color = PrimaryScarlet,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium
-                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(PrimaryScarlet.copy(alpha = 0.2f))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = "Notes",
+                                color = PrimaryScarlet,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 },
                 actions = {
                     IconButton(
-                        onClick = onNavigateToVocabulary,
-                        modifier = Modifier.testTag("nav_vocabulary_button")
+                        onClick = onNavigateToArchived,
+                        modifier = Modifier.testTag("archive_nav_button")
                     ) {
                         Icon(
-                            imageVector = Icons.Default.TextFields,
+                            imageVector = Icons.Default.Archive,
+                            contentDescription = "Archived Notes",
+                            tint = TextSecondary
+                        )
+                    }
+
+                    IconButton(
+                        onClick = onNavigateToVocabulary,
+                        modifier = Modifier.testTag("vocab_nav_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Spellcheck,
                             contentDescription = "Custom Vocabulary",
                             tint = TextSecondary
                         )
                     }
+
                     IconButton(
                         onClick = onNavigateToSettings,
-                        modifier = Modifier.testTag("nav_settings_button")
+                        modifier = Modifier.testTag("settings_nav_button")
                     ) {
                         Icon(
                             imageVector = Icons.Default.Settings,
@@ -191,436 +190,523 @@ fun HomeScreen(
                         )
                     }
                 },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                    containerColor = BackgroundDark
-                )
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = BackgroundDark)
             )
+        },
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = { showCaptureOptions = true },
+                containerColor = PrimaryScarlet,
+                contentColor = Color.White,
+                shape = CircleShape,
+                modifier = Modifier
+                    .size(56.dp)
+                    .testTag("capture_fab")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = "Capture Note",
+                    modifier = Modifier.size(28.dp)
+                )
+            }
         },
         containerColor = BackgroundDark
     ) { innerPadding ->
-        LazyColumn(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(horizontal = 20.dp),
-            contentPadding = PaddingValues(bottom = 32.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .padding(horizontal = 16.dp)
         ) {
-            // Providers Status Bar
-            item {
-                Spacer(modifier = Modifier.height(8.dp))
-                ProviderHealthBar(
-                    geminiHealth = providerHealthMap["Gemini"]?.status ?: ProviderStatus.AVAILABLE,
-                    groqHealth = providerHealthMap["Groq Whisper"]?.status ?: ProviderStatus.AVAILABLE,
-                    geminiMins = todayGeminiMins,
-                    groqMins = todayGroqMins,
-                    onOpenSettings = onNavigateToSettings
-                )
-            }
-
-            // Main Recording Section
-            item {
-                Spacer(modifier = Modifier.height(36.dp))
-
-                val infiniteTransition = rememberInfiniteTransition()
-                val pulseScale by infiniteTransition.animateFloat(
-                    initialValue = 1.0f,
-                    targetValue = 1.06f,
-                    animationSpec = infiniteRepeatable(
-                        animation = tween(1200),
-                        repeatMode = RepeatMode.Reverse
+            // Search Bar
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { viewModel.setSearchQuery(it) },
+                placeholder = {
+                    Text(
+                        text = "Search notes by title, body, or keywords...",
+                        color = TextMuted,
+                        fontSize = 13.sp
                     )
-                )
-
-                Box(
-                    modifier = Modifier.size(190.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    // Outer glow ring
-                    Box(
-                        modifier = Modifier
-                            .size(190.dp)
-                            .scale(pulseScale)
-                            .clip(CircleShape)
-                            .background(PrimaryScarletGlow)
-                    )
-
-                    // Secondary ring
-                    Box(
-                        modifier = Modifier
-                            .size(150.dp)
-                            .clip(CircleShape)
-                            .background(SurfaceDark)
-                            .border(2.dp, PrimaryScarlet.copy(alpha = 0.4f), CircleShape)
-                    )
-
-                    // Main mic button
-                    Box(
-                        modifier = Modifier
-                            .size(118.dp)
-                            .clip(CircleShape)
-                            .background(
-                                Brush.radialGradient(
-                                    listOf(PrimaryScarlet, PrimaryScarletDark)
-                                )
-                            )
-                            .clickable {
-                                val hasPermission = ContextCompat.checkSelfPermission(
-                                    context,
-                                    Manifest.permission.RECORD_AUDIO
-                                ) == PackageManager.PERMISSION_GRANTED
-
-                                if (hasPermission) {
-                                    viewModel.startRecording()
-                                } else {
-                                    permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                                }
-                            }
-                            .testTag("record_voice_button"),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Mic,
-                            contentDescription = "Record Voice Note",
-                            tint = Color.White,
-                            modifier = Modifier.size(54.dp)
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Text(
-                    text = "Tap to Record",
-                    color = TextPrimary,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold
-                )
-
-                Text(
-                    text = "Verbatim Egyptian Arabic & English mixed speech",
-                    color = TextMuted,
-                    fontSize = 13.sp
-                )
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                // Import Audio Button
-                OutlinedButton(
-                    onClick = {
-                        audioPickerLauncher.launch("audio/*")
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth(0.75f)
-                        .height(48.dp)
-                        .testTag("import_audio_button"),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        containerColor = SurfaceElevated
-                    ),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, SurfaceBorder)
-                ) {
+                },
+                leadingIcon = {
                     Icon(
-                        imageVector = Icons.Default.FileOpen,
-                        contentDescription = null,
-                        tint = TextPrimary,
+                        imageVector = Icons.Default.Search,
+                        contentDescription = "Search",
+                        tint = TextMuted,
                         modifier = Modifier.size(18.dp)
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Import Audio File",
-                        color = TextPrimary,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = "Supports M4A, MP3, WAV, AAC, MP4, OGG, OPUS, FLAC",
-                    color = TextMuted,
-                    fontSize = 11.sp
-                )
-            }
-
-            // Recent Transcriptions Header
-            item {
-                Spacer(modifier = Modifier.height(36.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "RECENT TRANSCRIPTIONS",
-                        color = TextSecondary,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.sp
-                    )
-
-                    if (recentItems.isNotEmpty()) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .clickable { onNavigateToHistory() }
-                                .padding(vertical = 4.dp)
-                                .testTag("view_all_history_button")
-                        ) {
-                            Text(
-                                text = "View All (${recentItems.size})",
-                                color = PrimaryScarlet,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
+                },
+                trailingIcon = {
+                    if (searchQuery.isNotBlank()) {
+                        IconButton(onClick = { viewModel.setSearchQuery("") }) {
                             Icon(
-                                imageVector = Icons.Default.ChevronRight,
-                                contentDescription = null,
-                                tint = PrimaryScarlet,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                    }
-                }
-                Spacer(modifier = Modifier.height(12.dp))
-            }
-
-            // Recent Transcriptions List
-            if (recentItems.isEmpty()) {
-                item {
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(16.dp))
-                            .border(1.dp, SurfaceBorder, RoundedCornerShape(16.dp)),
-                        color = SurfaceDark
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(28.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Mic,
-                                contentDescription = null,
+                                imageVector = Icons.Default.Clear,
+                                contentDescription = "Clear Search",
                                 tint = TextMuted,
-                                modifier = Modifier.size(36.dp)
-                            )
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Text(
-                                text = "No transcriptions yet",
-                                color = TextSecondary,
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "Record or import your first voice note above",
-                                color = TextMuted,
-                                fontSize = 12.sp
+                                modifier = Modifier.size(18.dp)
                             )
                         }
                     }
-                }
-            } else {
-                items(recentItems, key = { it.id }) { item ->
-                    RecentTranscriptionCard(
-                        item = item,
-                        onClick = { onNavigateToResult(item.id) }
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun ProviderHealthBar(
-    geminiHealth: ProviderStatus,
-    groqHealth: ProviderStatus,
-    geminiMins: Double,
-    groqMins: Double,
-    onOpenSettings: () -> Unit
-) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .border(1.dp, SurfaceBorder, RoundedCornerShape(14.dp)),
-        color = SurfaceElevated
-    ) {
-        Row(
-            modifier = Modifier
-                .padding(horizontal = 14.dp, vertical = 10.dp)
-                .fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Gemini status
-            ProviderChip(
-                name = "Gemini",
-                status = geminiHealth,
-                minsToday = geminiMins,
-                onClick = onOpenSettings
-            )
-
-            // Separator
-            Box(
+                },
+                singleLine = true,
                 modifier = Modifier
-                    .width(1.dp)
-                    .height(24.dp)
-                    .background(SurfaceBorder)
-            )
-
-            // Groq status
-            ProviderChip(
-                name = "Groq Whisper",
-                status = groqHealth,
-                minsToday = groqMins,
-                onClick = onOpenSettings
-            )
-        }
-    }
-}
-
-@Composable
-fun ProviderChip(
-    name: String,
-    status: ProviderStatus,
-    minsToday: Double,
-    onClick: () -> Unit
-) {
-    val statusColor = when (status) {
-        ProviderStatus.AVAILABLE -> AccentGreen
-        ProviderStatus.RATE_LIMITED -> AccentAmber
-        ProviderStatus.UNAVAILABLE -> ErrorRed
-        ProviderStatus.MISSING_KEY -> TextMuted
-    }
-
-    val statusText = when (status) {
-        ProviderStatus.AVAILABLE -> "Active"
-        ProviderStatus.RATE_LIMITED -> "Rate Limited"
-        ProviderStatus.UNAVAILABLE -> "Error"
-        ProviderStatus.MISSING_KEY -> "Setup Key"
-    }
-
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.clickable { onClick() }
-    ) {
-        Box(
-            modifier = Modifier
-                .size(7.dp)
-                .clip(CircleShape)
-                .background(statusColor)
-        )
-        Spacer(modifier = Modifier.width(6.dp))
-        Column {
-            Text(
-                text = "$name • $statusText",
-                color = TextPrimary,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-            Text(
-                text = "Today: ${String.format(Locale.US, "%.1f", minsToday)}m",
-                color = TextMuted,
-                fontSize = 11.sp
-            )
-        }
-    }
-}
-
-@Composable
-fun RecentTranscriptionCard(
-    item: TranscriptionEntity,
-    onClick: () -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onClick() }
-            .testTag("recent_item_${item.id}"),
-        colors = CardDefaults.cardColors(containerColor = SurfaceDark),
-        shape = RoundedCornerShape(14.dp),
-        border = CardDefaults.outlinedCardBorder().copy(brush = Brush.linearGradient(listOf(SurfaceBorder, SurfaceBorder)))
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = item.title,
-                    color = TextPrimary,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
+                    .fillMaxWidth()
+                    .testTag("home_search_input"),
+                shape = RoundedCornerShape(12.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = PrimaryScarlet,
+                    unfocusedBorderColor = SurfaceBorder,
+                    focusedTextColor = TextPrimary,
+                    unfocusedTextColor = TextPrimary,
+                    focusedContainerColor = SurfaceDark,
+                    unfocusedContainerColor = SurfaceDark
                 )
-
-                // Duration badge
-                val totalSecs = item.durationMs / 1000
-                val mins = totalSecs / 60
-                val secs = totalSecs % 60
-                Surface(
-                    shape = RoundedCornerShape(6.dp),
-                    color = SurfaceElevated
-                ) {
-                    Text(
-                        text = String.format(Locale.US, "%02d:%02d", mins, secs),
-                        color = TextSecondary,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(6.dp))
-
-            // Transcript preview snippet
-            Text(
-                text = item.transcript,
-                color = TextMuted,
-                fontSize = 13.sp,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                lineHeight = 18.sp
             )
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Footer with provider badge and date
+            // Filter chips row
+            if (searchQuery.isBlank()) {
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    val filters = listOf("All", "Voice", "Text", "Pinned")
+                    items(filters) { filter ->
+                        FilterChip(
+                            selected = selectedFilter == filter,
+                            onClick = { selectedFilter = filter },
+                            label = { Text(filter, fontSize = 12.sp) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = PrimaryScarlet,
+                                selectedLabelColor = Color.White,
+                                containerColor = SurfaceDark,
+                                labelColor = TextSecondary
+                            ),
+                            border = FilterChipDefaults.filterChipBorder(
+                                borderColor = SurfaceBorder,
+                                selectedBorderColor = PrimaryScarlet,
+                                enabled = true,
+                                selected = selectedFilter == filter
+                            ),
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+
+            // Notes List Content
+            val displayedNotes = when {
+                searchQuery.isNotBlank() -> searchResults
+                selectedFilter == "Voice" -> allNotes.filter { it.getSourceTypeEnum() == NoteSourceType.VOICE || it.getSourceTypeEnum() == NoteSourceType.IMPORTED_AUDIO }
+                selectedFilter == "Text" -> allNotes.filter { it.getSourceTypeEnum() == NoteSourceType.TEXT }
+                selectedFilter == "Pinned" -> pinnedNotes
+                else -> allNotes
+            }
+
+            if (displayedNotes.isEmpty()) {
+                EmptyNotesView(
+                    isSearch = searchQuery.isNotBlank(),
+                    onStartVoice = {
+                        val hasMicPermission = ContextCompat.checkSelfPermission(
+                            context,
+                            Manifest.permission.RECORD_AUDIO
+                        ) == PackageManager.PERMISSION_GRANTED
+
+                        if (hasMicPermission) {
+                            val started = viewModel.startRecording()
+                            if (started) showRecordingDialog = true
+                        } else {
+                            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                        }
+                    },
+                    onStartText = { showTextNoteEditor = true },
+                    onStartImport = { audioPickerLauncher.launch("audio/*") }
+                )
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = 80.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    // Pinned notes section (only when on All view without active search)
+                    if (searchQuery.isBlank() && selectedFilter == "All" && pinnedNotes.isNotEmpty()) {
+                        item {
+                            Row(
+                                modifier = Modifier.padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.PushPin,
+                                    contentDescription = null,
+                                    tint = PrimaryScarlet,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "PINNED",
+                                    color = TextSecondary,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 1.sp
+                                )
+                            }
+                        }
+
+                        items(pinnedNotes, key = { "pinned_${it.id}" }) { note ->
+                            NoteCard(
+                                note = note,
+                                onClick = { onNavigateToNoteDetail(note.id) },
+                                onTogglePin = { viewModel.togglePin(note) }
+                            )
+                        }
+
+                        item {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "OTHER NOTES (${allNotes.size - pinnedNotes.size})",
+                                color = TextSecondary,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.sp,
+                                modifier = Modifier.padding(vertical = 4.dp)
+                            )
+                        }
+
+                        val unpinnedNotes = allNotes.filter { !it.isPinned }
+                        items(unpinnedNotes, key = { it.id }) { note ->
+                            NoteCard(
+                                note = note,
+                                onClick = { onNavigateToNoteDetail(note.id) },
+                                onTogglePin = { viewModel.togglePin(note) }
+                            )
+                        }
+                    } else {
+                        // Regular list
+                        items(displayedNotes, key = { it.id }) { note ->
+                            NoteCard(
+                                note = note,
+                                onClick = { onNavigateToNoteDetail(note.id) },
+                                onTogglePin = { viewModel.togglePin(note) }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Capture Options Modal Bottom Sheet
+    if (showCaptureOptions) {
+        CaptureOptionSheet(
+            onDismiss = { showCaptureOptions = false },
+            onSelectVoice = {
+                val hasMicPermission = ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.RECORD_AUDIO
+                ) == PackageManager.PERMISSION_GRANTED
+
+                if (hasMicPermission) {
+                    val started = viewModel.startRecording()
+                    if (started) showRecordingDialog = true
+                } else {
+                    permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                }
+            },
+            onSelectText = { showTextNoteEditor = true },
+            onSelectImport = { audioPickerLauncher.launch("audio/*") }
+        )
+    }
+
+    // Text Note Editor Dialog
+    if (showTextNoteEditor) {
+        TextNoteEditorDialog(
+            onDismiss = { showTextNoteEditor = false },
+            onSave = { title, body ->
+                showTextNoteEditor = false
+                viewModel.createTextNote(title, body) { newId ->
+                    onNavigateToNoteDetail(newId)
+                }
+            }
+        )
+    }
+
+    // Voice Recording Modal Dialog
+    if (showRecordingDialog) {
+        val recordingState by viewModel.audioRecorder.recordingState.collectAsState()
+        val elapsedMs by viewModel.audioRecorder.elapsedTimeMs.collectAsState()
+        val amplitudes by viewModel.audioRecorder.amplitudesHistory.collectAsState()
+
+        RecordingModalDialog(
+            elapsedTimeMs = elapsedMs,
+            recordingState = recordingState,
+            amplitudes = amplitudes,
+            onPause = { viewModel.pauseRecording() },
+            onResume = { viewModel.resumeRecording() },
+            onCancel = {
+                viewModel.cancelRecording()
+                showRecordingDialog = false
+            },
+            onStopAndTranscribe = {
+                viewModel.stopAndTranscribe()
+                showRecordingDialog = false
+            }
+        )
+    }
+}
+
+@Composable
+fun NoteCard(
+    note: NoteEntity,
+    onClick: () -> Unit,
+    onTogglePin: () -> Unit
+) {
+    val sourceType = note.getSourceTypeEnum()
+    val isAudio = sourceType != NoteSourceType.TEXT
+    val dateFormatted = formatCompactDate(note.createdAt)
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .clickable { onClick() }
+            .testTag("note_card_${note.id}"),
+        colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+        shape = RoundedCornerShape(14.dp),
+        border = if (note.isPinned) {
+            BorderStroke(1.dp, PrimaryScarlet.copy(alpha = 0.5f))
+        } else {
+            BorderStroke(1.dp, SurfaceBorder)
+        }
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            // Top row: Source badge & Pin icon
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    when (sourceType) {
+                        NoteSourceType.VOICE -> {
+                            SourceBadge(
+                                icon = Icons.Default.Mic,
+                                label = if (note.durationMs > 0) formatDuration(note.durationMs) else "Voice",
+                                tint = PrimaryScarlet,
+                                bg = PrimaryScarlet.copy(alpha = 0.12f)
+                            )
+                        }
+                        NoteSourceType.TEXT -> {
+                            SourceBadge(
+                                icon = Icons.Default.EditNote,
+                                label = "Text Note",
+                                tint = Color(0xFF388AF6),
+                                bg = Color(0xFF388AF6).copy(alpha = 0.12f)
+                            )
+                        }
+                        NoteSourceType.IMPORTED_AUDIO -> {
+                            SourceBadge(
+                                icon = Icons.Default.FileOpen,
+                                label = "Imported Audio",
+                                tint = Color(0xFF30D158),
+                                bg = Color(0xFF30D158).copy(alpha = 0.12f)
+                            )
+                        }
+                    }
+
+                    if (note.titleWasAutoGenerated) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Icon(
+                            imageVector = Icons.Default.AutoAwesome,
+                            contentDescription = "Auto-titled",
+                            tint = TextMuted,
+                            modifier = Modifier.size(12.dp)
+                        )
+                    }
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = item.provider,
-                        color = PrimaryScarlet,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Text(
-                        text = " • ar-EG + en",
+                        text = dateFormatted,
                         color = TextMuted,
                         fontSize = 11.sp
                     )
+
+                    IconButton(
+                        onClick = onTogglePin,
+                        modifier = Modifier.size(28.dp).testTag("pin_note_${note.id}")
+                    ) {
+                        Icon(
+                            imageVector = if (note.isPinned) Icons.Default.PushPin else Icons.Outlined.PushPin,
+                            contentDescription = if (note.isPinned) "Unpin" else "Pin",
+                            tint = if (note.isPinned) PrimaryScarlet else TextMuted,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Title prominently
+            Text(
+                text = note.title,
+                color = TextPrimary,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                lineHeight = 21.sp
+            )
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // Body preview (1-3 lines)
+            Text(
+                text = note.body,
+                color = TextSecondary,
+                fontSize = 13.sp,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+                lineHeight = 18.sp
+            )
+        }
+    }
+}
+
+@Composable
+fun SourceBadge(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    tint: Color,
+    bg: Color
+) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(bg)
+            .padding(horizontal = 8.dp, vertical = 3.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = tint,
+                modifier = Modifier.size(12.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = label,
+                color = tint,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+    }
+}
+
+@Composable
+fun EmptyNotesView(
+    isSearch: Boolean,
+    onStartVoice: () -> Unit,
+    onStartText: () -> Unit,
+    onStartImport: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(vertical = 48.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .size(72.dp)
+                .clip(CircleShape)
+                .background(SurfaceDark)
+                .border(1.dp, SurfaceBorder, CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = if (isSearch) Icons.Default.Search else Icons.Default.EditNote,
+                contentDescription = null,
+                tint = PrimaryScarlet,
+                modifier = Modifier.size(36.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text(
+            text = if (isSearch) "No Matching Notes Found" else "No Notes Yet",
+            color = TextPrimary,
+            fontSize = 17.sp,
+            fontWeight = FontWeight.Bold
+        )
+
+        Spacer(modifier = Modifier.height(6.dp))
+
+        Text(
+            text = if (isSearch) {
+                "Try searching with different terms in Arabic or English"
+            } else {
+                "Capture your thoughts instantly using voice, text, or imported audio"
+            },
+            color = TextMuted,
+            fontSize = 13.sp,
+            lineHeight = 18.sp,
+            modifier = Modifier.padding(horizontal = 32.dp),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
+
+        if (!isSearch) {
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                androidx.compose.material3.Button(
+                    onClick = onStartVoice,
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = PrimaryScarlet),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Icon(Icons.Default.Mic, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Voice Note", fontSize = 13.sp)
                 }
 
-                val dateFormat = SimpleDateFormat("MMM d, h:mm a", Locale.getDefault())
-                Text(
-                    text = dateFormat.format(Date(item.createdAt)),
-                    color = TextMuted,
-                    fontSize = 11.sp
-                )
+                androidx.compose.material3.OutlinedButton(
+                    onClick = onStartText,
+                    colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(containerColor = SurfaceDark),
+                    border = BorderStroke(1.dp, SurfaceBorder),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Icon(Icons.Default.EditNote, contentDescription = null, modifier = Modifier.size(16.dp), tint = TextPrimary)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Text Note", color = TextPrimary, fontSize = 13.sp)
+                }
             }
         }
     }
+}
+
+fun formatCompactDate(timestamp: Long): String {
+    val now = System.currentTimeMillis()
+    val diff = now - timestamp
+
+    return when {
+        diff < 60_000L -> "Just now"
+        diff < 3600_000L -> "${diff / 60_000L}m ago"
+        diff < 86400_000L -> "${diff / 3600_000L}h ago"
+        diff < 7 * 86400_000L -> "${diff / 86400_000L}d ago"
+        else -> SimpleDateFormat("MMM d", Locale.getDefault()).format(Date(timestamp))
+    }
+}
+
+fun formatDuration(ms: Long): String {
+    val totalSecs = ms / 1000
+    val mins = totalSecs / 60
+    val secs = totalSecs % 60
+    return String.format(Locale.US, "%02d:%02d", mins, secs)
 }

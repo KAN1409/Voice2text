@@ -7,13 +7,16 @@ import androidx.lifecycle.viewModelScope
 import com.example.VoiceTranscriberApp
 import com.example.audio.AudioImportResult
 import com.example.audio.RecordingState
+import com.example.data.local.entity.NoteEntity
 import com.example.data.local.entity.TranscriptionEntity
 import com.example.data.local.entity.VocabularyEntity
 import com.example.data.repository.ExportFormat
 import com.example.domain.model.AccuracyMode
+import com.example.domain.model.NoteSourceType
 import com.example.domain.model.ProviderHealth
 import com.example.domain.model.TranscriptionOptions
 import com.example.domain.model.TranscriptionResult
+import com.example.notes.naming.CaptureTitleSuggester
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -33,13 +36,14 @@ sealed class TranscriptionUiState {
         val fileName: String,
         val durationMs: Long
     ) : TranscriptionUiState()
-    data class Success(val recordId: Long, val result: TranscriptionResult) : TranscriptionUiState()
+    data class Success(val noteId: Long, val result: TranscriptionResult) : TranscriptionUiState()
     data class Error(val errorMessage: String, val isRetryable: Boolean = false) : TranscriptionUiState()
 }
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val container = (application as VoiceTranscriberApp).container
+    private val noteRepo = container.noteRepository
     private val transcriptionRepo = container.transcriptionRepository
     private val settingsRepo = container.settingsRepository
     private val keyStorage = container.secureKeyStorage
@@ -48,16 +52,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val audioPlayer = container.audioPlayer
     val audioImporter = container.audioImporter
 
-    // Observables
-    val recentTranscriptions: StateFlow<List<TranscriptionEntity>> = transcriptionRepo
-        .getRecentTranscriptions(5)
+    // Observables - Notes
+    val allActiveNotes: StateFlow<List<NoteEntity>> = noteRepo
+        .allActiveNotes
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val allTranscriptions: StateFlow<List<TranscriptionEntity>> = transcriptionRepo
-        .allTranscriptions
+    val pinnedNotes: StateFlow<List<NoteEntity>> = noteRepo
+        .pinnedNotes
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val vocabularyList: StateFlow<List<VocabularyEntity>> = transcriptionRepo
+    val archivedNotes: StateFlow<List<NoteEntity>> = noteRepo
+        .archivedNotes
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val vocabularyList: StateFlow<List<VocabularyEntity>> = noteRepo
         .allVocabulary
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -72,14 +80,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _transcriptionState = MutableStateFlow<TranscriptionUiState>(TranscriptionUiState.Idle)
     val transcriptionState: StateFlow<TranscriptionUiState> = _transcriptionState.asStateFlow()
 
-    private val _selectedRecord = MutableStateFlow<TranscriptionEntity?>(null)
-    val selectedRecord: StateFlow<TranscriptionEntity?> = _selectedRecord.asStateFlow()
+    private val _selectedNote = MutableStateFlow<NoteEntity?>(null)
+    val selectedNote: StateFlow<NoteEntity?> = _selectedNote.asStateFlow()
 
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
-    private val _searchResults = MutableStateFlow<List<TranscriptionEntity>>(emptyList())
-    val searchResults: StateFlow<List<TranscriptionEntity>> = _searchResults.asStateFlow()
+    private val _searchResults = MutableStateFlow<List<NoteEntity>>(emptyList())
+    val searchResults: StateFlow<List<NoteEntity>> = _searchResults.asStateFlow()
 
     private val _todayGeminiMinutes = MutableStateFlow(0.0)
     val todayGeminiMinutes: StateFlow<Double> = _todayGeminiMinutes.asStateFlow()
@@ -155,6 +163,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // --- Search ---
     fun setSearchQuery(query: String) {
         _searchQuery.value = query
         if (query.isBlank()) {
@@ -162,85 +171,140 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         viewModelScope.launch {
-            transcriptionRepo.searchTranscriptions(query).collect { results ->
+            noteRepo.searchNotes(query).collect { results ->
                 _searchResults.value = results
             }
         }
     }
 
-    fun selectRecord(id: Long) {
+    // --- Note Selection & Actions ---
+    fun selectNote(id: Long) {
         viewModelScope.launch {
-            val record = transcriptionRepo.getTranscriptionByIdDirect(id)
-            _selectedRecord.value = record
-            if (record != null && record.audioFilePath.isNotBlank()) {
-                audioPlayer.loadAudio(record.audioFilePath)
-            }
-        }
-    }
-
-    fun updateRecordTitle(id: Long, newTitle: String) {
-        viewModelScope.launch {
-            val record = transcriptionRepo.getTranscriptionByIdDirect(id) ?: return@launch
-            val updated = record.copy(title = newTitle.trim())
-            transcriptionRepo.updateTranscription(updated)
-            _selectedRecord.value = updated
-        }
-    }
-
-    fun updateRecordTranscript(id: Long, newText: String) {
-        viewModelScope.launch {
-            val record = transcriptionRepo.getTranscriptionByIdDirect(id) ?: return@launch
-            val wordCount = newText.trim().split("\\s+".toRegex()).count { it.isNotBlank() }
-            val updated = record.copy(transcript = newText.trim(), wordCount = wordCount)
-            transcriptionRepo.updateTranscription(updated)
-            _selectedRecord.value = updated
-        }
-    }
-
-    fun deleteRecord(id: Long) {
-        viewModelScope.launch {
-            transcriptionRepo.deleteTranscription(id)
-            if (_selectedRecord.value?.id == id) {
-                _selectedRecord.value = null
+            val note = noteRepo.getNoteByIdDirect(id)
+            _selectedNote.value = note
+            if (note != null && !note.audioFilePath.isNullOrBlank()) {
+                audioPlayer.loadAudio(note.audioFilePath)
+            } else {
                 audioPlayer.release()
             }
-            _toastMessage.emit("Transcript deleted")
         }
     }
 
-    fun clearAllHistory() {
+    fun createTextNote(userTitle: String, body: String, onCreated: (Long) -> Unit) {
+        if (body.isBlank() && userTitle.isBlank()) return
         viewModelScope.launch {
-            transcriptionRepo.deleteAllTranscriptions()
-            _selectedRecord.value = null
-            audioPlayer.release()
-            _toastMessage.emit("All transcription history deleted")
+            val customVocab = noteRepo.getVocabularyTermsDirect()
+            val finalTitle: String
+            val isAutoTitle: Boolean
+            val confidence: Float
+            val keywords: String
+
+            if (userTitle.isNotBlank()) {
+                finalTitle = userTitle.trim()
+                isAutoTitle = false
+                confidence = 1.0f
+                val suggestion = CaptureTitleSuggester.suggest(body, customVocab)
+                keywords = suggestion.keywords.joinToString(",")
+            } else {
+                val suggestion = CaptureTitleSuggester.suggest(body, customVocab)
+                finalTitle = suggestion.title
+                isAutoTitle = true
+                confidence = suggestion.confidence
+                keywords = suggestion.keywords.joinToString(",")
+            }
+
+            val wordCount = body.trim().split("\\s+".toRegex()).count { it.isNotBlank() }
+            val note = NoteEntity(
+                title = finalTitle,
+                body = body.trim(),
+                sourceType = NoteSourceType.TEXT.name,
+                createdAt = System.currentTimeMillis(),
+                updatedAt = System.currentTimeMillis(),
+                durationMs = 0L,
+                wordCount = wordCount,
+                titleWasAutoGenerated = isAutoTitle,
+                titleConfidence = confidence,
+                suggestedKeywords = keywords
+            )
+
+            val newId = noteRepo.saveNote(note)
+            selectNote(newId)
+            _toastMessage.emit("Note saved")
+            onCreated(newId)
+        }
+    }
+
+    fun updateNoteTitle(id: Long, newTitle: String) {
+        viewModelScope.launch {
+            noteRepo.updateNoteTitle(id, newTitle)
+            val updated = noteRepo.getNoteByIdDirect(id)
+            _selectedNote.value = updated
+        }
+    }
+
+    fun updateNoteBody(id: Long, newBody: String) {
+        viewModelScope.launch {
+            noteRepo.updateNoteBody(id, newBody)
+            val updated = noteRepo.getNoteByIdDirect(id)
+            _selectedNote.value = updated
+        }
+    }
+
+    fun togglePin(note: NoteEntity) {
+        viewModelScope.launch {
+            val newPinState = !note.isPinned
+            noteRepo.togglePin(note.id, note.isPinned)
+            val updated = noteRepo.getNoteByIdDirect(note.id)
+            _selectedNote.value = updated
+            _toastMessage.emit(if (newPinState) "Note pinned to top" else "Note unpinned")
+        }
+    }
+
+    fun toggleArchive(note: NoteEntity) {
+        viewModelScope.launch {
+            val newArchiveState = !note.isArchived
+            noteRepo.toggleArchive(note.id, note.isArchived)
+            val updated = noteRepo.getNoteByIdDirect(note.id)
+            _selectedNote.value = updated
+            _toastMessage.emit(if (newArchiveState) "Note moved to archive" else "Note restored from archive")
+        }
+    }
+
+    fun deleteNote(id: Long) {
+        viewModelScope.launch {
+            noteRepo.deleteNote(id)
+            if (_selectedNote.value?.id == id) {
+                _selectedNote.value = null
+                audioPlayer.release()
+            }
+            _toastMessage.emit("Note deleted")
         }
     }
 
     fun addVocabulary(term: String, category: String = "General") {
         if (term.isBlank()) return
         viewModelScope.launch {
-            transcriptionRepo.addVocabularyTerm(term, category)
+            noteRepo.addVocabularyTerm(term, category)
             _toastMessage.emit("Added \"$term\" to vocabulary")
         }
     }
 
     fun deleteVocabulary(id: Long) {
         viewModelScope.launch {
-            transcriptionRepo.deleteVocabularyTerm(id)
+            noteRepo.deleteVocabularyTerm(id)
         }
     }
 
     fun addPresetVocabulary(terms: List<Pair<String, String>>) {
         viewModelScope.launch {
             for ((term, cat) in terms) {
-                transcriptionRepo.addVocabularyTerm(term, cat)
+                noteRepo.addVocabularyTerm(term, cat)
             }
             _toastMessage.emit("Preset terms added to vocabulary")
         }
     }
 
-    // --- Transcription Flow ---
+    // --- Audio Recording & Transcription Capture Flow ---
 
     fun startRecording(): Boolean {
         val file = audioRecorder.startRecording()
@@ -261,7 +325,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
-        transcribeAudioFile(file, "audio/mp4", file.name, elapsed)
+        transcribeAudioFile(
+            audioFile = file,
+            mimeType = "audio/mp4",
+            fileName = file.name,
+            durationMs = elapsed,
+            sourceType = NoteSourceType.VOICE
+        )
     }
 
     fun importAudio(uri: Uri) {
@@ -279,7 +349,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     audioFile = imported.file,
                     mimeType = imported.mimeType,
                     fileName = imported.originalFileName,
-                    durationMs = imported.durationMs
+                    durationMs = imported.durationMs,
+                    sourceType = NoteSourceType.IMPORTED_AUDIO
                 )
             }.onFailure { error ->
                 _transcriptionState.value = TranscriptionUiState.Error(
@@ -289,8 +360,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun retranscribeRecord(record: TranscriptionEntity, forcedProviderName: String? = null) {
-        val file = File(record.audioFilePath)
+    fun retranscribeNote(note: NoteEntity) {
+        val path = note.audioFilePath
+        if (path.isNullOrBlank()) {
+            viewModelScope.launch {
+                _toastMessage.emit("This note does not have an audio recording.")
+            }
+            return
+        }
+
+        val file = File(path)
         if (!file.exists()) {
             viewModelScope.launch {
                 _toastMessage.emit("Original audio file is no longer available.")
@@ -299,7 +378,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         val mimeType = if (file.name.endsWith(".mp3")) "audio/mp3" else "audio/mp4"
-        transcribeAudioFile(file, mimeType, record.originalFileName, record.durationMs, existingRecordId = record.id)
+        transcribeAudioFile(
+            audioFile = file,
+            mimeType = mimeType,
+            fileName = note.originalFileName ?: file.name,
+            durationMs = note.durationMs,
+            sourceType = note.getSourceTypeEnum(),
+            existingNote = note
+        )
     }
 
     private fun transcribeAudioFile(
@@ -307,7 +393,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         mimeType: String,
         fileName: String,
         durationMs: Long,
-        existingRecordId: Long? = null
+        sourceType: NoteSourceType,
+        existingNote: NoteEntity? = null
     ) {
         viewModelScope.launch {
             _transcriptionState.value = TranscriptionUiState.Processing(
@@ -317,13 +404,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 durationMs = durationMs
             )
 
-            val customVocab = transcriptionRepo.getVocabularyTermsDirect()
+            val customVocab = noteRepo.getVocabularyTermsDirect()
             val options = TranscriptionOptions(
                 accuracyMode = accuracyMode.value,
                 customVocabulary = customVocab
             )
 
             try {
+                // RUN FROZEN TRANSCRIPTION ROUTER
                 val result = transcriptionRouter.transcribeAudio(
                     audioFile = audioFile,
                     mimeType = mimeType,
@@ -341,32 +429,59 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 )
 
-                val smartTitle = transcriptionRepo.generateSmartTitle(result.text)
+                // RUN LOCAL CAPTURE TITLE SUGGESTER (Deterministic, fast, zero API quota)
+                val suggestion = CaptureTitleSuggester.suggest(result.text, customVocab)
                 val wordCount = result.text.split("\\s+".toRegex()).count { it.isNotBlank() }
 
-                val recordId = if (existingRecordId != null) {
-                    val existing = transcriptionRepo.getTranscriptionByIdDirect(existingRecordId)
-                    if (existing != null) {
-                        val updated = existing.copy(
-                            transcript = result.text,
-                            provider = result.providerName,
-                            model = result.modelName,
-                            detectedLanguages = result.detectedLanguages,
-                            processingTimeMs = result.processingTimeMs,
-                            wordCount = wordCount
-                        )
-                        transcriptionRepo.updateTranscription(updated)
-                        existingRecordId
-                    } else {
-                        insertNewRecord(smartTitle, result, audioFile, fileName, durationMs, wordCount)
-                    }
+                val noteId: Long
+                if (existingNote != null) {
+                    // If user manually edited the title previously, preserve their manual title!
+                    val finalTitle = if (existingNote.titleWasAutoGenerated) suggestion.title else existingNote.title
+                    val isAutoTitle = existingNote.titleWasAutoGenerated
+
+                    val updated = existingNote.copy(
+                        title = finalTitle,
+                        body = result.text,
+                        provider = result.providerName,
+                        model = result.modelName,
+                        detectedLanguages = result.detectedLanguages,
+                        processingTimeMs = result.processingTimeMs,
+                        wordCount = wordCount,
+                        titleWasAutoGenerated = isAutoTitle,
+                        titleConfidence = suggestion.confidence,
+                        suggestedKeywords = suggestion.keywords.joinToString(","),
+                        updatedAt = System.currentTimeMillis()
+                    )
+                    noteRepo.updateNote(updated)
+                    noteId = existingNote.id
                 } else {
-                    insertNewRecord(smartTitle, result, audioFile, fileName, durationMs, wordCount)
+                    val newNote = NoteEntity(
+                        title = suggestion.title,
+                        body = result.text,
+                        sourceType = sourceType.name,
+                        audioFilePath = audioFile.absolutePath,
+                        originalFileName = fileName,
+                        createdAt = System.currentTimeMillis(),
+                        updatedAt = System.currentTimeMillis(),
+                        durationMs = durationMs,
+                        provider = result.providerName,
+                        model = result.modelName,
+                        detectedLanguages = result.detectedLanguages,
+                        processingTimeMs = result.processingTimeMs,
+                        wordCount = wordCount,
+                        isPinned = false,
+                        isArchived = false,
+                        isFavorite = false,
+                        titleWasAutoGenerated = true,
+                        titleConfidence = suggestion.confidence,
+                        suggestedKeywords = suggestion.keywords.joinToString(",")
+                    )
+                    noteId = noteRepo.saveNote(newNote)
                 }
 
                 refreshUsageStats()
-                selectRecord(recordId)
-                _transcriptionState.value = TranscriptionUiState.Success(recordId, result)
+                selectNote(noteId)
+                _transcriptionState.value = TranscriptionUiState.Success(noteId, result)
             } catch (e: Exception) {
                 val errorMsg = e.localizedMessage ?: "Transcription failed. Please check your network and API keys."
                 _transcriptionState.value = TranscriptionUiState.Error(errorMsg, isRetryable = true)
@@ -374,36 +489,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private suspend fun insertNewRecord(
-        title: String,
-        result: TranscriptionResult,
-        audioFile: File,
-        fileName: String,
-        durationMs: Long,
-        wordCount: Int
-    ): Long {
-        val entity = TranscriptionEntity(
-            title = title,
-            transcript = result.text,
-            audioFilePath = audioFile.absolutePath,
-            originalFileName = fileName,
-            createdAt = System.currentTimeMillis(),
-            durationMs = durationMs,
-            provider = result.providerName,
-            model = result.modelName,
-            detectedLanguages = result.detectedLanguages,
-            processingTimeMs = result.processingTimeMs,
-            wordCount = wordCount
-        )
-        return transcriptionRepo.saveTranscription(entity)
-    }
-
     fun dismissTranscriptionDialog() {
         _transcriptionState.value = TranscriptionUiState.Idle
     }
 
-    fun getExportText(record: TranscriptionEntity, format: ExportFormat): String {
-        return transcriptionRepo.formatExportContent(record, format)
+    fun getExportText(note: NoteEntity, format: ExportFormat): String {
+        return noteRepo.formatExportContent(note, format)
     }
 
     override fun onCleared() {

@@ -21,9 +21,9 @@ import androidx.navigation.navArgument
 import com.example.ui.MainViewModel
 import com.example.ui.TranscriptionUiState
 import com.example.ui.components.TranscriptionProcessingDialog
-import com.example.ui.screens.HistoryScreen
+import com.example.ui.screens.ArchivedNotesScreen
 import com.example.ui.screens.HomeScreen
-import com.example.ui.screens.ResultScreen
+import com.example.ui.screens.NoteDetailScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.screens.VocabularyScreen
 import com.example.ui.theme.BackgroundDark
@@ -68,7 +68,7 @@ fun AppNavigation(viewModel: MainViewModel) {
             val state = transcriptionState
             if (state is TranscriptionUiState.Success) {
                 viewModel.dismissTranscriptionDialog()
-                navController.navigate("result/${state.recordId}")
+                navController.navigate("note_detail/${state.noteId}")
             } else {
                 viewModel.dismissTranscriptionDialog()
             }
@@ -86,30 +86,43 @@ fun AppNavigation(viewModel: MainViewModel) {
         composable("home") {
             HomeScreen(
                 viewModel = viewModel,
-                onNavigateToResult = { id -> navController.navigate("result/$id") },
-                onNavigateToHistory = { navController.navigate("history") },
+                onNavigateToNoteDetail = { id -> navController.navigate("note_detail/$id") },
+                onNavigateToArchived = { navController.navigate("archived") },
                 onNavigateToVocabulary = { navController.navigate("vocabulary") },
                 onNavigateToSettings = { navController.navigate("settings") }
             )
         }
 
         composable(
-            route = "result/{recordId}",
-            arguments = listOf(navArgument("recordId") { type = NavType.LongType })
+            route = "note_detail/{noteId}",
+            arguments = listOf(navArgument("noteId") { type = NavType.LongType })
         ) { backStackEntry ->
-            val recordId = backStackEntry.arguments?.getLong("recordId") ?: 0L
-            ResultScreen(
-                recordId = recordId,
+            val noteId = backStackEntry.arguments?.getLong("noteId") ?: 0L
+            NoteDetailScreen(
+                noteId = noteId,
                 viewModel = viewModel,
                 onNavigateBack = { navController.popBackStack() }
             )
         }
 
-        composable("history") {
-            HistoryScreen(
+        // Backward compatibility route
+        composable(
+            route = "result/{recordId}",
+            arguments = listOf(navArgument("recordId") { type = NavType.LongType })
+        ) { backStackEntry ->
+            val recordId = backStackEntry.arguments?.getLong("recordId") ?: 0L
+            NoteDetailScreen(
+                noteId = recordId,
                 viewModel = viewModel,
-                onNavigateToResult = { id -> navController.navigate("result/$id") },
                 onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable("archived") {
+            ArchivedNotesScreen(
+                viewModel = viewModel,
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToNoteDetail = { id -> navController.navigate("note_detail/$id") }
             )
         }
 

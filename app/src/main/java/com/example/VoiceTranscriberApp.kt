@@ -5,6 +5,7 @@ import com.example.audio.AudioImporter
 import com.example.audio.AudioPlayer
 import com.example.audio.AudioRecorder
 import com.example.data.local.AppDatabase
+import com.example.data.repository.NoteRepository
 import com.example.data.repository.SettingsRepository
 import com.example.data.repository.TranscriptionRepository
 import com.example.data.security.SecureKeyStorage
@@ -23,6 +24,10 @@ class AppContainer(private val application: Application) {
 
     val settingsRepository: SettingsRepository by lazy {
         SettingsRepository(application, database.usageStatDao())
+    }
+
+    val noteRepository: NoteRepository by lazy {
+        NoteRepository(database.noteDao(), database.vocabularyDao())
     }
 
     val transcriptionRepository: TranscriptionRepository by lazy {

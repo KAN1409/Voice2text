@@ -5,11 +5,63 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
+import com.example.data.local.entity.NoteEntity
 import com.example.data.local.entity.TranscriptionEntity
 import com.example.data.local.entity.UsageStatEntity
 import com.example.data.local.entity.VocabularyEntity
 import kotlinx.coroutines.flow.Flow
 
+@Dao
+interface NoteDao {
+    @Query("SELECT * FROM notes WHERE isArchived = 0 ORDER BY isPinned DESC, createdAt DESC")
+    fun getAllActiveNotes(): Flow<List<NoteEntity>>
+
+    @Query("SELECT * FROM notes WHERE isPinned = 1 AND isArchived = 0 ORDER BY createdAt DESC")
+    fun getPinnedNotes(): Flow<List<NoteEntity>>
+
+    @Query("SELECT * FROM notes WHERE isArchived = 1 ORDER BY updatedAt DESC")
+    fun getArchivedNotes(): Flow<List<NoteEntity>>
+
+    @Query("SELECT * FROM notes WHERE id = :id")
+    fun getNoteById(id: Long): Flow<NoteEntity?>
+
+    @Query("SELECT * FROM notes WHERE id = :id")
+    suspend fun getNoteByIdDirect(id: Long): NoteEntity?
+
+    @Query("""
+        SELECT * FROM notes 
+        WHERE isArchived = 0 AND (
+            title LIKE '%' || :query || '%' 
+            OR body LIKE '%' || :query || '%' 
+            OR suggestedKeywords LIKE '%' || :query || '%'
+        )
+        ORDER BY isPinned DESC, createdAt DESC
+    """)
+    fun searchNotes(query: String): Flow<List<NoteEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertNote(item: NoteEntity): Long
+
+    @Update
+    suspend fun updateNote(item: NoteEntity)
+
+    @Query("UPDATE notes SET isPinned = :isPinned WHERE id = :id")
+    suspend fun updatePinStatus(id: Long, isPinned: Boolean)
+
+    @Query("UPDATE notes SET isArchived = :isArchived, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun updateArchiveStatus(id: Long, isArchived: Boolean, updatedAt: Long = System.currentTimeMillis())
+
+    @Query("DELETE FROM notes WHERE id = :id")
+    suspend fun deleteNoteById(id: Long)
+
+    @Query("DELETE FROM notes")
+    suspend fun deleteAllNotes()
+
+    @Query("SELECT COUNT(*) FROM notes WHERE isArchived = 0")
+    suspend fun getActiveNoteCount(): Int
+}
+
+@Deprecated("Legacy DAO for migration compatibility")
 @Dao
 interface TranscriptionDao {
     @Query("SELECT * FROM transcriptions ORDER BY createdAt DESC")

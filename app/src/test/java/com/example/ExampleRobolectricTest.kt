@@ -2,9 +2,10 @@ package com.example
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
-import com.example.data.local.entity.TranscriptionEntity
+import com.example.data.local.entity.NoteEntity
 import com.example.data.repository.ExportFormat
-import com.example.transcription.HallucinationDetector
+import com.example.data.repository.NoteRepository
+import com.example.domain.model.NoteSourceType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -20,19 +21,20 @@ class ExampleRobolectricTest {
     fun `read string from context`() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val appName = context.getString(R.string.app_name)
-        assertEquals("VoiceTranscriber", appName)
+        assertEquals("Voice2text Notes", appName)
     }
 
     @Test
-    fun `test export formatting for SRT and Markdown`() {
+    fun `test export formatting for SRT and Markdown on NoteEntity`() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val db = com.example.data.local.AppDatabase.getDatabase(context)
-        val repo = com.example.data.repository.TranscriptionRepository(db.transcriptionDao(), db.vocabularyDao())
+        val repo = NoteRepository(db.noteDao(), db.vocabularyDao())
 
-        val sample = TranscriptionEntity(
+        val sample = NoteEntity(
             id = 1,
             title = "Site Meeting Discussion",
-            transcript = "تمت مراجعة الـ BOQ والـ variation order مع الكلاينت.",
+            body = "تمت مراجعة الـ BOQ والـ variation order مع الكلاينت.",
+            sourceType = NoteSourceType.VOICE.name,
             audioFilePath = "/path/to/rec.m4a",
             originalFileName = "rec.m4a",
             createdAt = 1726992000000L,
