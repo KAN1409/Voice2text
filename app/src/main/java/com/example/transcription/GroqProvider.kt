@@ -76,10 +76,12 @@ class GroqProvider(
             .setType(MultipartBody.FORM)
             .addFormDataPart("file", audioFile.name, fileRequestBody)
             .addFormDataPart("model", modelName)
+            // Arabic is the base language; Whisper still preserves embedded English terms.
+            // Explicit language prevents short Egyptian Arabic/English clips being misdetected as English and translated/romanized.
+            .addFormDataPart("language", "ar")
             .addFormDataPart("prompt", promptHint.toString())
             .addFormDataPart("response_format", "verbose_json")
             .addFormDataPart("temperature", "0.0")
-            // Intentionally omit `language`: Whisper should detect mixed Arabic/English from the audio.
             // This endpoint is /audio/transcriptions, never /audio/translations.
 
         val request = Request.Builder()
