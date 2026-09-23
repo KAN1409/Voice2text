@@ -75,7 +75,20 @@ class NoteRepository(
         noteDao.deleteNoteById(id)
     }
 
-    suspend fun deleteAllNotes() = noteDao.deleteAllNotes()
+    suspend fun deleteAllNotes() {
+        val notes = noteDao.getAllNotesDirect()
+        notes.forEach { note ->
+            val path = note.audioFilePath ?: return@forEach
+            runCatching {
+                val file = File(path)
+                val parentName = file.parentFile?.name
+                if (file.exists() && (parentName == "recordings" || parentName == "imported_audio")) {
+                    file.delete()
+                }
+            }
+        }
+        noteDao.deleteAllNotes()
+    }
 
     suspend fun getVocabularyTermsDirect(): List<String> = vocabularyDao.getAllTermsDirect()
 
