@@ -67,7 +67,7 @@ class GroqProvider(
 
         val fileRequestBody = audioFile.asRequestBody(cleanMimeType.toMediaType())
 
-        val promptHint = StringBuilder("Egyptian Arabic and English code-switching conversation. Terms: quotation, contractor, meeting, project, invoice, shop drawing, approval. ")
+        val promptHint = StringBuilder("Transcribe verbatim in the language actually spoken. Preserve Egyptian Arabic exactly as Egyptian Arabic and preserve English words/phrases exactly as English. Mixed Arabic-English code-switching is expected. Do not translate, paraphrase, summarize, formalize colloquial Arabic, or convert Arabic speech into English. Keep repetitions, wording, and language switches faithful to the audio. Terms: quotation, contractor, meeting, project, invoice, shop drawing, approval. ")
         if (options.customVocabulary.isNotEmpty()) {
             promptHint.append("Keywords: ").append(options.customVocabulary.joinToString(", "))
         }
@@ -79,6 +79,8 @@ class GroqProvider(
             .addFormDataPart("prompt", promptHint.toString())
             .addFormDataPart("response_format", "verbose_json")
             .addFormDataPart("temperature", "0.0")
+            // Intentionally omit `language`: Whisper should detect mixed Arabic/English from the audio.
+            // This endpoint is /audio/transcriptions, never /audio/translations.
 
         val request = Request.Builder()
             .url("https://api.groq.com/openai/v1/audio/transcriptions")
