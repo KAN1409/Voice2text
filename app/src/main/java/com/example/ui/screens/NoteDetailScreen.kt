@@ -73,6 +73,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.entity.NoteEntity
@@ -439,6 +440,12 @@ fun NoteDetailScreen(
                                 .height(260.dp)
                                 .testTag("edit_body_input"),
                             shape = RoundedCornerShape(10.dp),
+                            textStyle = androidx.compose.ui.text.TextStyle(
+                                color = TextPrimary,
+                                fontSize = 15.sp,
+                                lineHeight = 24.sp,
+                                textDirection = TextDirection.Content
+                            ),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = PrimaryScarlet,
                                 unfocusedBorderColor = SurfaceBorder,
@@ -454,7 +461,12 @@ fun NoteDetailScreen(
                                 text = note.body,
                                 color = TextPrimary,
                                 fontSize = 15.sp,
-                                lineHeight = 24.sp
+                                lineHeight = 24.sp,
+                                // Let Unicode BiDi resolve each paragraph from its actual content.
+                                // This is display-only: note.body is never transformed or reordered.
+                                style = androidx.compose.ui.text.TextStyle(
+                                    textDirection = TextDirection.Content
+                                )
                             )
                         }
                     }
@@ -462,9 +474,9 @@ fun NoteDetailScreen(
                     Spacer(modifier = Modifier.height(14.dp))
 
                     // Word count & info
-                    Row(
+                    Column(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Text(
                             text = "${note.wordCount} words",
@@ -476,7 +488,10 @@ fun NoteDetailScreen(
                             Text(
                                 text = "Keywords: ${note.suggestedKeywords.replace(",", " • ")}",
                                 color = TextMuted,
-                                fontSize = 11.sp
+                                fontSize = 11.sp,
+                                style = androidx.compose.ui.text.TextStyle(
+                                    textDirection = TextDirection.Content
+                                )
                             )
                         }
                     }
