@@ -28,7 +28,7 @@ class AudioImporter(private val context: Context) {
 
             val mimeType = contentResolver.getType(uri) ?: getMimeTypeFromExtension(extension)
 
-            val cacheDir = File(context.cacheDir, "imported_audio").apply { mkdirs() }
+            val cacheDir = File(context.filesDir, "imported_audio").apply { mkdirs() }
             val tempFile = File(cacheDir, "imported_${System.currentTimeMillis()}.$extension")
 
             contentResolver.openInputStream(uri)?.use { input ->
