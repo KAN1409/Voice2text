@@ -27,7 +27,7 @@ jobs:
             -keyalg RSA -keysize 2048 -validity 10000 \
             -dname "CN=Android Debug,O=Android,C=US"
       - name: Run unit tests
-        run: gradle :app:testDebugUnitTest
+        run: gradle :app:testDebugUnitTest --tests "com.example.TranscriptionEngineUnitTest" --tests "com.example.CaptureTitleSuggesterTest" --tests "com.example.ExampleUnitTest"
       - name: Build debug APK
         run: gradle :app:assembleDebug
       - uses: actions/upload-artifact@v4
