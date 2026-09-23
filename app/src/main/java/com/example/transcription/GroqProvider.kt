@@ -67,7 +67,7 @@ class GroqProvider(
 
         val fileRequestBody = audioFile.asRequestBody(cleanMimeType.toMediaType())
 
-        val promptHint = StringBuilder("Transcribe verbatim in the language actually spoken. Preserve Egyptian Arabic exactly as Egyptian Arabic and preserve English words/phrases exactly as English. Mixed Arabic-English code-switching is expected. Do not translate, paraphrase, summarize, formalize colloquial Arabic, or convert Arabic speech into English. Keep repetitions, wording, and language switches faithful to the audio. Terms: quotation, contractor, meeting, project, invoice, shop drawing, approval. ")
+        val promptHint = StringBuilder("Egyptian Arabic and English code-switching conversation. Terms: quotation, contractor, meeting, project, invoice, shop drawing, approval. ")
         if (options.customVocabulary.isNotEmpty()) {
             promptHint.append("Keywords: ").append(options.customVocabulary.joinToString(", "))
         }
