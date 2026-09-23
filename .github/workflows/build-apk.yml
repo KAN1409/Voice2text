@@ -18,7 +18,7 @@ jobs:
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v4
       - name: Build debug APK
-        run: ./gradlew assembleDebug
+        run: gradle :app:assembleDebug
       - uses: actions/upload-artifact@v4
         with:
           name: Voice2text-debug-apk
