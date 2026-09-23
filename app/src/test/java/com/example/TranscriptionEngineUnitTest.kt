@@ -47,4 +47,16 @@ class TranscriptionEngineUnitTest {
         val merged = HallucinationDetector.mergeWithOverlap(chunk1, chunk2)
         assertEquals("المهندس استلم الـ shop drawings قبل meeting بكرة في الموقع مع الاستشاري", merged)
     }
+    @Test
+    fun sanitizeTranscript_preservesMixedArabicEnglish() {
+        val raw = "بكرة عندنا meeting مع الـ contractor عشان نراجع shop drawing"
+        assertEquals(raw, HallucinationDetector.sanitizeTranscript(raw))
+    }
+
+    @Test
+    fun sanitizeTranscript_preservesNormalNonArtifactLines() {
+        val raw = "الـ quotation وصل النهارده\nPlease send the revised BOQ بكرة"
+        assertEquals(raw, HallucinationDetector.sanitizeTranscript(raw))
+    }
+
 }
