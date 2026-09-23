@@ -363,7 +363,7 @@ fun NoteDetailScreen(
                 Spacer(modifier = Modifier.height(16.dp))
             }
 
-            // Note Body Content Card
+            // Note Body Content Card 
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = SurfaceDark),
