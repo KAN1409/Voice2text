@@ -73,11 +73,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.entity.NoteEntity
 import com.example.data.repository.ExportFormat
 import com.example.domain.model.NoteSourceType
+import com.example.export.NoteExportManager
 import com.example.ui.MainViewModel
 import com.example.ui.components.AudioPlayerBar
 import com.example.ui.theme.BackgroundDark
@@ -88,6 +90,7 @@ import com.example.ui.theme.SurfaceElevated
 import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -360,7 +363,7 @@ fun NoteDetailScreen(
                 Spacer(modifier = Modifier.height(16.dp))
             }
 
-            // Note Body Content Card
+            // Note Body Content Card 
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = SurfaceDark),
@@ -382,19 +385,33 @@ fun NoteDetailScreen(
                         )
 
                         if (!isEditingBody) {
-                            IconButton(
-                                onClick = {
-                                    editedBodyText = note.body
-                                    isEditingBody = true
-                                },
-                                modifier = Modifier.size(32.dp).testTag("edit_body_button")
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Edit,
-                                    contentDescription = "Edit Text",
-                                    tint = TextSecondary,
-                                    modifier = Modifier.size(16.dp)
-                                )
+                            Row {
+                                IconButton(
+                                    onClick = { copyToClipboard(context, note.body) },
+                                    modifier = Modifier.size(32.dp).testTag("copy_body_button")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ContentCopy,
+                                        contentDescription = "Copy transcription",
+                                        tint = TextSecondary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(6.dp))
+                                IconButton(
+                                    onClick = {
+                                        editedBodyText = note.body
+                                        isEditingBody = true
+                                    },
+                                    modifier = Modifier.size(32.dp).testTag("edit_body_button")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Edit,
+                                        contentDescription = "Edit Text",
+                                        tint = TextSecondary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
                             }
                         } else {
                             Row {
@@ -439,6 +456,12 @@ fun NoteDetailScreen(
                                 .height(260.dp)
                                 .testTag("edit_body_input"),
                             shape = RoundedCornerShape(10.dp),
+                            textStyle = androidx.compose.ui.text.TextStyle(
+                                color = TextPrimary,
+                                fontSize = 15.sp,
+                                lineHeight = 24.sp,
+                                textDirection = TextDirection.Content
+                            ),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = PrimaryScarlet,
                                 unfocusedBorderColor = SurfaceBorder,
@@ -454,7 +477,12 @@ fun NoteDetailScreen(
                                 text = note.body,
                                 color = TextPrimary,
                                 fontSize = 15.sp,
-                                lineHeight = 24.sp
+                                lineHeight = 24.sp,
+                                // Let Unicode BiDi resolve each paragraph from its actual content.
+                                // This is display-only: note.body is never transformed or reordered.
+                                style = androidx.compose.ui.text.TextStyle(
+                                    textDirection = TextDirection.Content
+                                )
                             )
                         }
                     }
@@ -462,9 +490,9 @@ fun NoteDetailScreen(
                     Spacer(modifier = Modifier.height(14.dp))
 
                     // Word count & info
-                    Row(
+                    Column(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Text(
                             text = "${note.wordCount} words",
@@ -476,7 +504,10 @@ fun NoteDetailScreen(
                             Text(
                                 text = "Keywords: ${note.suggestedKeywords.replace(",", " • ")}",
                                 color = TextMuted,
-                                fontSize = 11.sp
+                                fontSize = 11.sp,
+                                style = androidx.compose.ui.text.TextStyle(
+                                    textDirection = TextDirection.Content
+                                )
                             )
                         }
                     }
@@ -669,6 +700,30 @@ fun ExportBottomSheet(
             if (isAudio) {
                 Spacer(modifier = Modifier.height(10.dp))
 
+                ExportFormatRow("Audio (original quality)", "Share the exact saved recording without re-encoding") {
+                    val audio = NoteExportManager.originalAudio(note)
+                    if (audio != null) {
+                        shareFile(context, audio, audioMimeType(audio))
+                    } else {
+                        Toast.makeText(context, "Original audio is not available", Toast.LENGTH_SHORT).show()
+                    }
+                    onDismiss()
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                ExportFormatRow("Archive (.zip)", "Original audio + transcription.txt in one file") {
+                    val archive = NoteExportManager.createArchive(context, note)
+                    if (archive != null) {
+                        shareFile(context, archive, "application/zip")
+                    } else {
+                        Toast.makeText(context, "Original audio is not available", Toast.LENGTH_SHORT).show()
+                    }
+                    onDismiss()
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
                 ExportFormatRow("Subtitles (.srt)", "Timestamped subtitle file") {
                     val content = viewModel.getExportText(note, ExportFormat.SRT)
                     shareExportedText(context, "${note.title}.srt", content)
@@ -737,6 +792,25 @@ fun shareNote(context: Context, title: String, body: String) {
     }
     val shareIntent = Intent.createChooser(sendIntent, "Share note")
     context.startActivity(shareIntent)
+}
+
+fun audioMimeType(file: File): String = when (file.extension.lowercase()) {
+    "mp3" -> "audio/mpeg"
+    "wav" -> "audio/wav"
+    "ogg", "opus" -> "audio/ogg"
+    "flac" -> "audio/flac"
+    "webm" -> "audio/webm"
+    else -> "audio/mp4"
+}
+
+fun shareFile(context: Context, file: File, mimeType: String) {
+    val uri = NoteExportManager.uri(context, file)
+    val sendIntent = Intent(Intent.ACTION_SEND).apply {
+        type = mimeType
+        putExtra(Intent.EXTRA_STREAM, uri)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    context.startActivity(Intent.createChooser(sendIntent, "Export ${file.name}"))
 }
 
 fun shareExportedText(context: Context, fileName: String, content: String) {
