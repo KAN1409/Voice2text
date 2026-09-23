@@ -52,7 +52,7 @@ class SecureKeyStorage(private val context: Context) {
     private fun encrypt(plainText: String): String {
         if (plainText.isEmpty()) return ""
         return try {
-            val secretKey = keyStore.getKey(keyAlias, null) as? SecretKey ?: return plainText
+            val secretKey = keyStore.getKey(keyAlias, null) as? SecretKey ?: return ""
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
             cipher.init(Cipher.ENCRYPT_MODE, secretKey)
             val iv = cipher.iv
@@ -62,7 +62,7 @@ class SecureKeyStorage(private val context: Context) {
             System.arraycopy(cipherText, 0, combined, iv.size, cipherText.size)
             Base64.encodeToString(combined, Base64.NO_WRAP)
         } catch (e: Exception) {
-            plainText
+            ""
         }
     }
 
@@ -70,19 +70,21 @@ class SecureKeyStorage(private val context: Context) {
         if (encryptedBase64.isEmpty()) return ""
         return try {
             val combined = Base64.decode(encryptedBase64, Base64.NO_WRAP)
-            val secretKey = keyStore.getKey(keyAlias, null) as? SecretKey ?: return encryptedBase64
+            val secretKey = keyStore.getKey(keyAlias, null) as? SecretKey ?: return ""
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
             val gcmSpec = GCMParameterSpec(128, combined, 0, 12)
             cipher.init(Cipher.DECRYPT_MODE, secretKey, gcmSpec)
             val plainBytes = cipher.doFinal(combined, 12, combined.size - 12)
             String(plainBytes, Charsets.UTF_8)
         } catch (e: Exception) {
-            encryptedBase64
+            ""
         }
     }
 
     fun saveGeminiKey(key: String) {
-        prefs.edit().putString(KEY_GEMINI_API, encrypt(key.trim())).apply()
+        val encrypted = encrypt(key.trim())
+        if (key.isBlank()) prefs.edit().remove(KEY_GEMINI_API).apply()
+        else if (encrypted.isNotEmpty()) prefs.edit().putString(KEY_GEMINI_API, encrypted).apply()
     }
 
     fun getGeminiKey(): String {
@@ -106,7 +108,9 @@ class SecureKeyStorage(private val context: Context) {
     }
 
     fun saveGroqKey(key: String) {
-        prefs.edit().putString(KEY_GROQ_API, encrypt(key.trim())).apply()
+        val encrypted = encrypt(key.trim())
+        if (key.isBlank()) prefs.edit().remove(KEY_GROQ_API).apply()
+        else if (encrypted.isNotEmpty()) prefs.edit().putString(KEY_GROQ_API, encrypted).apply()
     }
 
     fun getGroqKey(): String {
