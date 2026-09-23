@@ -64,7 +64,8 @@ class NoteRepository(
         if (note != null && !note.audioFilePath.isNullOrBlank()) {
             try {
                 val file = File(note.audioFilePath)
-                if (file.exists() && file.absolutePath.contains("recordings")) {
+                val parentName = file.parentFile?.name
+                if (file.exists() && (parentName == "recordings" || parentName == "imported_audio")) {
                     file.delete()
                 }
             } catch (e: Exception) {
