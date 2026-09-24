@@ -118,7 +118,7 @@ class GroqProvider(
             val detectedLanguage = json.optString("language", "ar / en")
 
             val cleanedText = HallucinationDetector.sanitizeTranscript(rawText)
-            val processingTimeMs = System.currentTimeMillis() - startTime
+            Log.i(\n                "GroqProvider",\n                "ASR diagnostics: segments=${segments?.length() ?: 0}, " +\n                    "lowConfidence=$lowConfidenceSegments, suspicious=$suspiciousSegments"\n            )\n            val processingTimeMs = System.currentTimeMillis() - startTime
 
             TranscriptionResult(
                 text = rawText,
