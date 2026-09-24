@@ -137,7 +137,7 @@ class GroqProvider(
                 "GroqProvider",
                 "ASR diagnostics segments=${segments?.length() ?: 0} lowConfidence=$lowConfidence suspicious=$suspicious"
             )
-            val processingTimeMs = System.currentTimeMillis() - startTime
+            if (lowConfidence > 0 || suspicious > 0) {\n                Log.w("GroqProvider", "ASR verification recommended: low-confidence or anomalous segment detected")\n            }\n            val processingTimeMs = System.currentTimeMillis() - startTime
 
             TranscriptionResult(
                 text = rawText,
