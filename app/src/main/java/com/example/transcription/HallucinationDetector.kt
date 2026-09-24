@@ -1,8 +1,15 @@
 package com.example.transcription
 
+/**
+ * Diagnostic-only transcript anomaly analysis.
+ *
+ * This object must never rewrite ASR output. The recognizer's text is evidence and remains
+ * immutable; callers may use [analyze] to decide whether another decoding pass/provider is
+ * warranted.
+ */
 object HallucinationDetector {
 
-    private val SUSPICIOUS_PHRASES = listOf(
+    private val suspiciousPhrases = listOf(
         "اشترك في القناة",
         "لا تنسوا الاشتراك",
         "تفعيل زر الجرس",
@@ -16,73 +23,74 @@ object HallucinationDetector {
         "please like and subscribe"
     )
 
-    fun sanitizeTranscript(rawText: String, audioDurationMs: Long = 0): String {
-        var text = rawText.trim()
-        if (text.isBlank()) return ""
+    data class Analysis(
+        val suspiciousPhraseHits: List<String>,
+        val consecutiveRepeatCount: Int,
+        val isSuspicious: Boolean
+    )
 
-        // Check for common silence hallucination lines
-        val lines = text.split("\n").filter { line ->
-            val lower = line.trim().lowercase()
-            !SUSPICIOUS_PHRASES.any { lower.contains(it) }
-        }
-        text = lines.joinToString("\n").trim()
-
-        // Remove excessive repeated consecutive sentences
-        text = removeRepeatedPhrases(text)
-
-        return text
-    }
-
-    fun removeRepeatedPhrases(text: String): String {
-        val sentences = text.split(Regex("(?<=[.!?،\n])\\s*")).filter { it.isNotBlank() }
-        if (sentences.size <= 2) return text
-
-        val deduplicated = mutableListOf<String>()
-        var repeatCount = 0
-        var lastSentence = ""
-
-        for (sentence in sentences) {
-            val normalized = sentence.trim().lowercase()
-            if (normalized == lastSentence) {
-                repeatCount++
-                if (repeatCount < 2) {
-                    deduplicated.add(sentence.trim())
-                }
-            } else {
-                repeatCount = 0
-                lastSentence = normalized
-                deduplicated.add(sentence.trim())
-            }
-        }
-
-        return deduplicated.joinToString(" ")
+    /**
+     * Observe anomalies without changing a single character of the transcript.
+     */
+    fun analyze(rawText: String): Analysis {
+        val lower = rawText.lowercase()
+        val hits = suspiciousPhrases.filter { lower.contains(it) }
+        val repeats = countConsecutiveRepeats(rawText)
+        return Analysis(
+            suspiciousPhraseHits = hits,
+            consecutiveRepeatCount = repeats,
+            isSuspicious = hits.isNotEmpty() || repeats >= 2
+        )
     }
 
     /**
-     * Deduplicate overlap between two consecutive chunks.
+     * Compatibility shim for older callers. Intentionally returns the original text verbatim.
+     */
+    @Deprecated("ASR text is immutable. Use analyze(rawText) for diagnostics.")
+    fun sanitizeTranscript(rawText: String, audioDurationMs: Long = 0): String = rawText
+
+    private fun countConsecutiveRepeats(text: String): Int {
+        val sentences = text.split(Regex("(?<=[.!?،\\n])\\s*"))
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+        var previous: String? = null
+        var run = 0
+        var maxRun = 0
+        for (sentence in sentences) {
+            val normalized = sentence.lowercase()
+            if (normalized == previous) {
+                run++
+                maxRun = maxOf(maxRun, run)
+            } else {
+                previous = normalized
+                run = 0
+            }
+        }
+        return maxRun
+    }
+
+    /**
+     * Legacy overlap helper retained for chunk assembly only. It never changes words; it only
+     * removes an exact duplicated boundary that is known to come from overlapping audio chunks.
      */
     fun mergeWithOverlap(firstChunk: String, secondChunk: String): String {
         val text1 = firstChunk.trim()
         val text2 = secondChunk.trim()
-
         if (text1.isEmpty()) return text2
         if (text2.isEmpty()) return text1
 
         val words1 = text1.split("\\s+".toRegex())
         val words2 = text2.split("\\s+".toRegex())
-
         val maxOverlapWords = minOf(words1.size, words2.size, 15)
 
         for (overlapLen in maxOverlapWords downTo 2) {
             val endOf1 = words1.takeLast(overlapLen).joinToString(" ").lowercase()
             val startOf2 = words2.take(overlapLen).joinToString(" ").lowercase()
-
             if (endOf1 == startOf2) {
-                val remainingOf2 = words2.drop(overlapLen).joinToString(" ")
-                return if (remainingOf2.isNotBlank()) "$text1 $remainingOf2" else text1
+                val remaining = words2.drop(overlapLen).joinToString(" ")
+                return if (remaining.isBlank()) text1 else "$text1 $remaining"
             }
         }
-
         return "$text1 $text2"
     }
 }
