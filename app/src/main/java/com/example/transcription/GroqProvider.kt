@@ -67,7 +67,7 @@ class GroqProvider(
 
         val fileRequestBody = audioFile.asRequestBody(cleanMimeType.toMediaType())
 
-        val promptHint = StringBuilder("Egyptian Arabic and English code-switching conversation. Terms: quotation, contractor, meeting, project, invoice, shop drawing, approval. ")
+        val promptHint = StringBuilder("محادثة باللهجة المصرية مع English code-switching. Terms: quotation, contractor, meeting, project, invoice, shop drawing, approval. ")
         if (options.customVocabulary.isNotEmpty()) {
             promptHint.append("Keywords: ").append(options.customVocabulary.joinToString(", "))
         }
@@ -121,7 +121,7 @@ class GroqProvider(
             val processingTimeMs = System.currentTimeMillis() - startTime
 
             TranscriptionResult(
-                text = cleanedText,
+                text = rawText,
                 providerName = name,
                 modelName = modelName,
                 detectedLanguages = detectedLanguage,
