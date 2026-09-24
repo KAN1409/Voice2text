@@ -117,8 +117,27 @@ class GroqProvider(
             val rawText = json.optString("text", "").trim()
             val detectedLanguage = json.optString("language", "ar / en")
 
-            val cleanedText = HallucinationDetector.sanitizeTranscript(rawText)
-            Log.i(\n                "GroqProvider",\n                "ASR diagnostics: segments=${segments?.length() ?: 0}, " +\n                    "lowConfidence=$lowConfidenceSegments, suspicious=$suspiciousSegments"\n            )\n            val segments = json.optJSONArray("segments")\n            var lowConfidence = 0\n            var suspicious = 0\n            if (segments != null) {\n                for (i in 0 until segments.length()) {\n                    val segment = segments.optJSONObject(i) ?: continue\n                    val logProb = segment.optDouble("avg_logprob", Double.NaN)\n                    val noSpeech = segment.optDouble("no_speech_prob", Double.NaN)\n                    val compression = segment.optDouble("compression_ratio", Double.NaN)\n                    if ((!logProb.isNaN() && logProb < -1.0) || (!noSpeech.isNaN() && noSpeech > 0.6) || (!compression.isNaN() && compression > 2.4)) lowConfidence++\n                    if (HallucinationDetector.analyze(segment.optString("text", "")).isSuspicious) suspicious++\n                }\n            }\n            Log.i("GroqProvider", "ASR diagnostics segments=${segments?.length() ?: 0} lowConfidence=$lowConfidence suspicious=$suspicious")\n            val processingTimeMs = System.currentTimeMillis() - startTime
+            val segments = json.optJSONArray("segments")
+            var lowConfidence = 0
+            var suspicious = 0
+            if (segments != null) {
+                for (i in 0 until segments.length()) {
+                    val segment = segments.optJSONObject(i) ?: continue
+                    val logProb = segment.optDouble("avg_logprob", Double.NaN)
+                    val noSpeech = segment.optDouble("no_speech_prob", Double.NaN)
+                    val compression = segment.optDouble("compression_ratio", Double.NaN)
+                    if ((!logProb.isNaN() && logProb < -1.0) ||
+                        (!noSpeech.isNaN() && noSpeech > 0.6) ||
+                        (!compression.isNaN() && compression > 2.4)
+                    ) lowConfidence++
+                    if (HallucinationDetector.analyze(segment.optString("text", "")).isSuspicious) suspicious++
+                }
+            }
+            Log.i(
+                "GroqProvider",
+                "ASR diagnostics segments=${segments?.length() ?: 0} lowConfidence=$lowConfidence suspicious=$suspicious"
+            )
+            val processingTimeMs = System.currentTimeMillis() - startTime
 
             TranscriptionResult(
                 text = rawText,
